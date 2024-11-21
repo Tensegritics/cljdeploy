@@ -11,7 +11,9 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Only one step in this local CI
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: This is where the magic is happening
         env:
           STORE_PASSWORD: ${{ secrets.ANDROID_APP_STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.ANDROID_APP_KEY_PASSWORD }}
