@@ -1,6 +1,6 @@
 # Deploy your ClojureDart application
 
-This is an example repositorie containing the scripts necessary to deploy an iOS & Anrdoid app to the stores.
+This is an example repository containing the scripts necessary to deploy an iOS & Anrdoid app to the stores.
 
 Note that it has only been tested on macOs.
 
