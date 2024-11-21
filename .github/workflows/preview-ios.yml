@@ -1,0 +1,72 @@
+---
+name: ClojureDart iOS self-hosted CI
+
+on:
+  push:
+    tags:
+      - 'preview-ios*'
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+      - name: Only one step in this local CI
+        env:
+          # https://github.com/fastlane/fastlane/discussions/18926#discussioncomment-892897
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          # https://developer.apple.com/help/account/manage-keys/create-a-private-key
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          # https://developer.apple.com/help/account/manage-keys/get-a-key-identifier
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
+          # https://support.magplus.com/hc/en-us/articles/203808748-iOS-Creating-a-Distribution-Certificate-and-p12-File
+          P12: ${{ secrets.P12 }}
+          P12_PASSPHRASE: ${{ secrets.P12_PASSPHRASE }}
+          APPLICATION_ID_RESOURCE_ID: ${{ secrets.APPLICATION_ID_RESOURCE_ID }}
+        run: |
+          # I suppose reader has installed Clojure
+          # base/hardcore requirements
+          brew install miniconda
+          conda init gh
+          conda create -n py312-githubactions python=3.12 -y
+          conda activate py312-githubactions
+          brew install openssl
+          brew tap leoafarias/fvm
+          brew install fvm
+          # script really starting here
+          pip install codemagic-cli-tools
+          echo $P12 | base64 --decode -o cert.p12
+          openssl pkcs12 -legacy -in cert.p12 -passin env:P12_PASSPHRASE -nodes -nocerts | openssl rsa -out cert_key
+          keychain initialize
+          app-store-connect fetch-signing-files $(xcode-project detect-bundle-id) --platform IOS --type IOS_APP_STORE --certificate-key=@file:cert_key --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+          # needs a project with .fvmrc
+          fvm use -f
+          # clojuredart will use fvm if it finds it
+          clojure -M:cljd clean
+          fvm flutter pub get
+          fvm flutter packages pub get
+          fvm flutter precache --ios
+          find . -name "Podfile" -execdir pod install \;
+          clojure -M:cljd compile
+          # TODO: change `123456789` with your APP_ID
+          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-testflight-build-number -s 123456789 --issuer-id $APP_STORE_CONNECT_ISSUER_ID --key-id $APP_STORE_CONNECT_KEY_IDENTIFIER)
+          NEW_BUILD_NUMBER=$(echo $LATEST_BUILD_NUMBER |  awk  -F '.' '{print $1 "." $2 "." $3+1}')
+          sed -E -i '' "s/version: (.*)/version: $NEW_BUILD_NUMBER/g" pubspec.yaml
+          fvm flutter build ipa --release --export-options-plist=$HOME/export_options.plist
+          app-store-connect publish --path $(find $(pwd) -name "*.ipa")
+          echo "NEW_BUILD_NUMBER=$NEW_BUILD_NUMBER" >> $GITHUB_ENV
+
+      - name: Create tag
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const {NEW_BUILD_NUMBER} = process.env
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/ios-testflight-release-version-${NEW_BUILD_NUMBER}`,
+              sha: context.sha
+            })

@@ -1,0 +1,71 @@
+---
+name: ClojureDart Android self-hosted CI
+
+on:
+  push:
+    tags:
+      - 'preview-android-**'
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+      - name: Only one step in this local CI
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_APP_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_APP_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_APP_KEY_ALIAS }}
+          KEYSTORE: ${{ secrets.ANDROID_APP_KEYSTORE }}
+          SERVICE_ACCOUNT_JSON: ${{ secrets.ANDROID_APP_SERVICE_ACCOUNT_JSON }}
+        run: |
+          # I suppose reader has installed Clojure
+          # base/hardcore requirements
+          brew install miniconda
+          conda init gh
+          conda create -n py312-githubactions python=3.12 -y
+          conda activate py312-githubactions
+          brew install openssl
+          brew tap leoafarias/fvm
+          brew install fvm
+          # script really starting here
+          echo $KEYSTORE | base64 -d | tee upload-keystore.jks >/dev/null
+          echo "storePassword=$STORE_PASSWORD" | tee -a $GITHUB_WORKSPACE/android/key.properties >/dev/null
+          echo "keyPassword=$KEY_PASSWORD" | tee -a $GITHUB_WORKSPACE/android/key.properties >/dev/null
+          echo "keyAlias=$KEY_ALIAS" | tee -a $GITHUB_WORKSPACE/android/key.properties >/dev/null
+          echo "storeFile=$GITHUB_WORKSPACE/upload-keystore.jks" | tee -a $GITHUB_WORKSPACE/android/key.properties
+          echo $SERVICE_ACCOUNT_JSON | tee deploy/api.json >/dev/null
+          cd deploy
+          pip install --upgrade google-api-python-client
+          LATEST_BUILD_NUMBER=$(python githubaction_android_internal_version.py)
+          # without the 1.*
+          PROPER_NEW_BUILD_NUMBER=$((LATEST_BUILD_NUMBER + 1))
+          LATEST_BUILD_NUMBER=$(echo "1.0.$LATEST_BUILD_NUMBER")
+          NEW_BUILD_NUMBER=$(echo $LATEST_BUILD_NUMBER |  awk  -F '.' '{print $1 "." $2 "." $3+1 "+" $3+1}' | awk '{gsub(/"/, "", $0); print $0}')
+          cd ../
+          # macos syntax, might be different on other OSes
+          sed -E -i '' "s/version: (.*)/version: $NEW_BUILD_NUMBER/g" pubspec.yaml
+          fvm use -f
+          clojure -M:cljd clean
+          clojure -M:cljd compile
+          fvm flutter precache --android
+          fvm flutter build appbundle --release
+          AAB_FILE_PATH=$GITHUB_WORKSPACE/$(find build/app/outputs -type f -name "*.aab")
+          cp $AAB_FILE_PATH deploy/app-release.aab
+          cd deploy
+          echo "NEW_BUILD_NUMBER=$NEW_BUILD_NUMBER" >> $GITHUB_ENV
+          NEW_BUILD_NUMBER=$PROPER_NEW_BUILD_NUMBER python githubaction_android_internal_upload_aab.py
+          cd ../
+
+
+      - name: Create tag
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const {NEW_BUILD_NUMBER} = process.env
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/android-playstore-release-version-${NEW_BUILD_NUMBER}`,
+              sha: context.sha
+            })
