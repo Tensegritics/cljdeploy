@@ -29,7 +29,7 @@ if (flutterVersionName == null) {
 }
 
 android {
-    namespace "net.t10s.spendorwait"
+    namespace "my.package.id"
     compileSdkVersion flutter.compileSdkVersion
 
     compileOptions {
