@@ -2,9 +2,9 @@
 
 This is an example repository containing the scripts necessary to deploy an iOS & Anrdoid app to the stores.
 
-These scripts depend on Github Actions (and taht's where all secretes are stored). They can be used either by Github servers or by a Github Actions runner running locally on one of your machines (faster and cheaper builds, especially for macOS). 
+These scripts depend on Github Actions (and that's where all secretes are stored). They can be used either by Github servers or by a Github Actions runner running locally on one of your machines (faster and cheaper builds, especially for macOS). 
 
-Bexware: they have only been tested on macOs.
+Beware: they have only been tested on macOs.
 
 PR are welcomed if you want to add a deployment target (Windows, web, macOs...)
 
